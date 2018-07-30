@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lpar/blammo/log"
-	"github.com/lpar/paseto"
 	"github.com/lpar/serial"
+	"github.com/o1egl/paseto"
 )
 
 const defaultCookieName = "Session"

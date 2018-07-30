@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/lpar/blammo/log"
-	"github.com/lpar/paseto"
 	"github.com/lpar/pasetosession"
+	"github.com/o1egl/paseto"
 )
 
 // Example values for this demo
