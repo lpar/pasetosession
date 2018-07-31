@@ -20,7 +20,8 @@ const defaultCookieName = "Session"
 
 type contextKey string
 
-var defaultContextName = contextKey("session")
+// ContextName is the default context key to use when storing the user information in the Request context.
+var ContextName = contextKey("session")
 
 const jtiBase = 36
 
@@ -34,9 +35,6 @@ type SessionManager struct {
 	Audience string
 	// The Cookie name to use for session cookies. Default is "Session".
 	CookieName string
-	// The Go context key to use when placing the token into the http Context.
-	// If you don't know what that means it's safe to ignore it.
-	ContextName contextKey
 	// The URL to redirect users to when they attempt to access a page
 	// protected by the Authenticate wrapper and they aren't authenticated.
 	// If no URL is specified, they just get a 401 error.
@@ -61,7 +59,6 @@ func NewSessionManager(keySeed string, tokenLifetime time.Duration) *SessionMana
 		symmetricKey:  sk[:],
 		tokenLifetime: tokenLifetime,
 		CookieName:    defaultCookieName,
-		ContextName:   defaultContextName,
 		serialGen:     serial.NewGenerator(),
 	}
 	s.StartGC()
@@ -206,7 +203,7 @@ func (s *SessionManager) cookieToToken(r *http.Request) (*paseto.JSONToken, erro
 
 func (s *SessionManager) tokenToContext(tok *paseto.JSONToken, r *http.Request) *http.Request {
 	ctx := r.Context()
-	ctx = context.WithValue(ctx, s.ContextName, tok)
+	ctx = context.WithValue(ctx, ContextName, tok)
 	r = r.WithContext(ctx)
 	return r
 }
@@ -214,12 +211,12 @@ func (s *SessionManager) tokenToContext(tok *paseto.JSONToken, r *http.Request) 
 // GetToken extracts the paseto.JSONToken from the http.Request's Context, and return it.
 // The ok return value indicates whether any such context value was found.
 // This is the method to call to access the session information in your web app's handlers.
-func (s *SessionManager) GetToken(r *http.Request) (*paseto.JSONToken, bool) {
+func GetToken(r *http.Request) (*paseto.JSONToken, bool) {
 	ctx := r.Context()
 	var tok *paseto.JSONToken
 	var ok bool
 	if ctx != nil {
-		tok, ok = ctx.Value(s.ContextName).(*paseto.JSONToken)
+		tok, ok = ctx.Value(ContextName).(*paseto.JSONToken)
 	}
 	return tok, ok
 }
