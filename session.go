@@ -17,6 +17,7 @@ import (
 )
 
 const defaultCookieName = "Session"
+const defaultSameSite = "lax"
 
 type contextKey string
 
@@ -39,6 +40,9 @@ type SessionManager struct {
 	// protected by the Authenticate wrapper and they aren't authenticated.
 	// If no URL is specified, they just get a 401 error.
 	LoginURL      string
+	// The value of the SameSite attribute to use for the issued cookie.
+	// Default is "lax". See https://tools.ietf.org/html/draft-west-first-party-cookies-07
+	SameSite 			string
 	serialGen     *serial.Generator
 	gc            chan struct{}
 	symmetricKey  []byte
@@ -59,6 +63,7 @@ func NewSessionManager(keySeed string, tokenLifetime time.Duration) *SessionMana
 		symmetricKey:  sk[:],
 		tokenLifetime: tokenLifetime,
 		CookieName:    defaultCookieName,
+		SameSite:	defaultSameSite,
 		serialGen:     serial.NewGenerator(),
 	}
 	s.StartGC()
@@ -144,17 +149,26 @@ func (s *SessionManager) EncodeToken(subject string, jsontok ...*paseto.JSONToke
 // DecodeToken takes a string containing an encoded token, decodes it, and
 // verifies its validity by checking the audience, issuer, expiry timestamp,
 // and not-before timestamp, and making sure the token hasn't previously been decoded.
-func (s *SessionManager) DecodeToken(tok string) (*paseto.JSONToken, error) {
+// If allowReuse is set, the final validation step is skipped and the token isn't marked as used.
+func (s *SessionManager) DecodeToken(tok string, allowReuse bool) (*paseto.JSONToken, error) {
 	var token paseto.JSONToken
 	err := s.pasetov2.Decrypt(tok, s.symmetricKey, &token, nil)
 	if err == nil {
-		// Run validations in approximate order of difficulty, quickest first
-		err = token.Validate(
-			paseto.ForAudience(s.Audience),
-			paseto.IssuedBy(s.Issuer),
-			paseto.ValidAt(time.Now()),
-			ValidSequence(s.serialGen),
-		)
+		if allowReuse {
+			err = token.Validate(
+				paseto.ForAudience(s.Audience),
+				paseto.IssuedBy(s.Issuer),
+				paseto.ValidAt(time.Now()),
+			)
+		} else {
+			// Run validations in approximate order of difficulty, quickest first
+			err = token.Validate(
+				paseto.ForAudience(s.Audience),
+				paseto.IssuedBy(s.Issuer),
+				paseto.ValidAt(time.Now()),
+				ValidSequence(s.serialGen),
+			)
+		}
 	}
 	return &token, err
 }
@@ -189,15 +203,19 @@ func (s *SessionManager) TokenToCookie(w http.ResponseWriter, subject string, js
 		Path:     "/",
 	}
 	http.SetCookie(w, cookie)
+	// Workaround for https://github.com/golang/go/issues/15867
+	cs := w.Header().Get("Set-Cookie")
+	cs += "; SameSite=" + s.SameSite
+	w.Header().Set("Set-Cookie", cs)
 }
 
-func (s *SessionManager) cookieToToken(r *http.Request) (*paseto.JSONToken, error) {
+func (s *SessionManager) cookieToToken(r *http.Request, allowReuse bool) (*paseto.JSONToken, error) {
 	var tok *paseto.JSONToken
 	ctok, err := r.Cookie(s.CookieName)
 	if err != nil {
 		return tok, err
 	}
-	tok, err = s.DecodeToken(ctok.Value)
+	tok, err = s.DecodeToken(ctok.Value, allowReuse)
 	return tok, err
 }
 
@@ -228,11 +246,27 @@ func GetToken(r *http.Request) (*paseto.JSONToken, bool) {
 // If the SessionManager has been provided with a LoginURL, the browser is redirected
 // to that URL to log in. Otherwise, a 401 unauthorized error is issued.
 func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
+	return s.buildAuthenticator(xhnd, false)
+}
+
+// AuthenticateAjax is like Authenticate, except that tokens are not "spent" and can be
+// reused in other AuthenticateAjax calls until they expire.
+// The purpose is to allow authenticated protection of an AJAX endpoint, since
+// JavaScript POST events won't cause the browser's cookie store to be updated with any
+// new cookie issued.
+func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
+	return s.buildAuthenticator(xhnd, true)
+}
+
+
+func (s *SessionManager) buildAuthenticator(xhnd http.Handler, allowReuse bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok, err := s.cookieToToken(r)
+		tok, err := s.cookieToToken(r, allowReuse)
 		if err == nil {
-			log.Debug().Msg("reissuing valid session token")
-			s.TokenToCookie(w, tok.Subject, tok)
+			if !allowReuse {
+				log.Debug().Msg("reissuing valid session token")
+				s.TokenToCookie(w, tok.Subject, tok)
+			}
 			r = s.tokenToContext(tok, r)
 		} else {
 			if s.LoginURL != "" {
@@ -248,12 +282,13 @@ func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
 	})
 }
 
+
 // Refresh decodes and refreshes any session token cookie, and places any decoded
 // token in the HTTP context before calling the wrapped handler.
 func (s *SessionManager) Refresh(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Refresh here
-		tok, err := s.cookieToToken(r)
+		tok, err := s.cookieToToken(r, false)
 		if err == nil {
 			log.Debug().Msg("reissuing valid session token")
 			s.TokenToCookie(w, tok.Subject, tok)

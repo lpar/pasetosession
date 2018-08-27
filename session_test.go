@@ -39,6 +39,29 @@ func TestMain(m *testing.M) {
 }
 
 func TestToken(t *testing.T) {
+	s, strtok, err := makeTestData(t)
+	ntok, err := s.DecodeToken(strtok, false)
+	verifyOutcome(ntok, err, t, s, strtok)
+	_, err = s.DecodeToken(strtok, false)
+	if err == nil {
+		t.Errorf("duplicate token decode allowed")
+	} else {
+		log.Debug().Err(err).Msg("duplicate decode attempted")
+	}
+}
+
+func TestTokenReuse(t *testing.T) {
+	s, strtok, err := makeTestData(t)
+	ntok, err := s.DecodeToken(strtok, true)
+	verifyOutcome(ntok, err, t, s, strtok)
+	_, err = s.DecodeToken(strtok, false)
+	if err != nil {
+		t.Errorf("token reuse was not allowed")
+	}
+	verifyOutcome(ntok, err, t, s, strtok)
+}
+
+func makeTestData(t *testing.T) (*pasetosession.SessionManager, string, error) {
 	s := pasetosession.NewSessionManager("chunky bacon", 1*time.Minute)
 	s.Audience = testAudience
 	s.Issuer = testIssuer
@@ -56,7 +79,10 @@ func TestToken(t *testing.T) {
 		t.Errorf("call to EncodeToken mutated token argument")
 	}
 	log.Debug().Str("token", strtok).Msg("encoded token")
-	ntok, err := s.DecodeToken(strtok)
+	return s, strtok, err
+}
+
+func verifyOutcome(ntok *paseto.JSONToken, err error, t *testing.T, s *pasetosession.SessionManager, strtok string) {
 	log.Debug().Str("audience", ntok.Audience).Str("issuer", ntok.Issuer).Str("subject", ntok.Subject).Msg("decoded token")
 	if err != nil {
 		t.Errorf("failed to decode token: %v", err)
@@ -76,12 +102,7 @@ func TestToken(t *testing.T) {
 	if ntok.Get("email") != testEmail {
 		t.Errorf("email corrupted, expected %s got %s", testEmail, ntok.Get("email"))
 	}
-	_, err = s.DecodeToken(strtok)
-	if err == nil {
-		t.Errorf("duplicate token decode allowed")
-	} else {
-		log.Debug().Err(err).Msg("duplicate decode attempted")
-	}
+
 }
 
 func TestSessionKeys(t *testing.T) {
@@ -91,7 +112,7 @@ func TestSessionKeys(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to encode subject-only token")
 	}
-	tok2, err := s2.DecodeToken(tok1)
+	tok2, err := s2.DecodeToken(tok1, false)
 	if err == nil {
 		t.Errorf("tokens were passed between session managers with different secret keys")
 	}
@@ -110,7 +131,7 @@ func TestSessionTimeout(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to encode subject-only token")
 	}
-	toko, err := s.DecodeToken(tok1)
+	toko, err := s.DecodeToken(tok1, false)
 	if err != nil {
 		t.Errorf("failed to decode subject-only token inside expiry limit")
 	}
@@ -118,29 +139,11 @@ func TestSessionTimeout(t *testing.T) {
 		t.Errorf("token timeout test decode fail")
 	}
 	time.Sleep(2 * time.Second)
-	toko, err = s.DecodeToken(tok2)
+	toko, err = s.DecodeToken(tok2, false)
 	if err == nil {
 		t.Errorf("managed to decode subject-only token outside expiry limit")
 	}
 }
-
-/*
-type RecordingHandler struct {
-  Called bool
-  Token  *paseto.JSONToken
-}
-
-var recordingHandler = RecordingHandler{}
-
-func (h RecordingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-  // Not h, we need to store the values in the global
-  recordingHandler.Called = true
-  tok, ok := sessMgr.GetToken(r)
-  if ok {
-    recordingHandler.Token = tok
-  }
-}
-*/
 
 // Get a test cookie, then run it through refresh
 func TestCookieIssueAndRefresh(t *testing.T) {
