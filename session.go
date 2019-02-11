@@ -142,7 +142,7 @@ func (s *SessionManager) EncodeToken(subject string, jsontok ...*paseto.JSONToke
 	json.IssuedAt = now
 	json.Expiration = exp
 	var err error
-	token, err = s.pasetov2.Encrypt(s.symmetricKey, json)
+	token, err = s.pasetov2.Encrypt(s.symmetricKey, json, nil)
 	return token, err
 }
 
