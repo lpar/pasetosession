@@ -39,10 +39,10 @@ type SessionManager struct {
 	// The URL to redirect users to when they attempt to access a page
 	// protected by the Authenticate wrapper and they aren't authenticated.
 	// If no URL is specified, they just get a 401 error.
-	LoginURL      string
+	LoginURL string
 	// The value of the SameSite attribute to use for the issued cookie.
 	// Default is "lax". See https://tools.ietf.org/html/draft-west-first-party-cookies-07
-	SameSite 			string
+	SameSite      string
 	serialGen     *serial.Generator
 	gc            chan struct{}
 	symmetricKey  []byte
@@ -63,7 +63,7 @@ func NewSessionManager(keySeed string, tokenLifetime time.Duration) *SessionMana
 		symmetricKey:  sk[:],
 		tokenLifetime: tokenLifetime,
 		CookieName:    defaultCookieName,
-		SameSite:	defaultSameSite,
+		SameSite:      defaultSameSite,
 		serialGen:     serial.NewGenerator(),
 	}
 	s.StartGC()
@@ -142,7 +142,7 @@ func (s *SessionManager) EncodeToken(subject string, jsontok ...*paseto.JSONToke
 	json.IssuedAt = now
 	json.Expiration = exp
 	var err error
-	token, err = s.pasetov2.Encrypt(s.symmetricKey, json)
+	token, err = s.pasetov2.Encrypt(s.symmetricKey, json, nil)
 	return token, err
 }
 
@@ -258,7 +258,6 @@ func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
 	return s.buildAuthenticator(xhnd, true)
 }
 
-
 func (s *SessionManager) buildAuthenticator(xhnd http.Handler, allowReuse bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, err := s.cookieToToken(r, allowReuse)
@@ -281,7 +280,6 @@ func (s *SessionManager) buildAuthenticator(xhnd http.Handler, allowReuse bool) 
 		xhnd.ServeHTTP(w, r)
 	})
 }
-
 
 // Refresh decodes and refreshes any session token cookie, and places any decoded
 // token in the HTTP context before calling the wrapped handler.
