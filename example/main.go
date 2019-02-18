@@ -91,7 +91,7 @@ func secretPage(w http.ResponseWriter, r *http.Request) {
 
 // Output the top level page, with the user's name if logged in.
 func indexPage(w http.ResponseWriter, r *http.Request) {
-	tok, ok := sessmgr.GetToken(r)
+	tok, ok := pasetosession.GetToken(r)
 	greeting := "Hello anonymous stranger."
 	if ok {
 		greeting = fmt.Sprintf("Hello %s <%s>.", tok.Get("name"), tok.Get("email"))
