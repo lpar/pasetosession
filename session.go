@@ -247,8 +247,9 @@ func GetToken(r *http.Request) (*paseto.JSONToken, bool) {
 // to that URL to log in. Otherwise, a 401 unauthorized error is issued.
 func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.processAuthCookie(w, r, false)
-		xhnd.ServeHTTP(w, r)
+		if s.processAuthCookie(w, r, false) {
+			xhnd.ServeHTTP(w, r)
+		}
 	})
 }
 
@@ -256,8 +257,9 @@ func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
 // and returns a HandlerFunc as well.
 func (s *SessionManager) AuthenticateFunc(hndfunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.processAuthCookie(w, r, false)
-		hndfunc(w, r)
+		if s.processAuthCookie(w, r, false) {
+			hndfunc(w, r)
+		}
 	}
 }
 
@@ -268,8 +270,9 @@ func (s *SessionManager) AuthenticateFunc(hndfunc http.HandlerFunc) http.Handler
 // new cookie issued.
 func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.processAuthCookie(w, r, true)
+		if s.processAuthCookie(w, r, true) {
 		xhnd.ServeHTTP(w, r)
+		}
 	})
 }
 
@@ -277,12 +280,14 @@ func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
 // and returns a HandlerFunc as well.
 func (s *SessionManager) AuthenticateFuncAjax(hndfunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.processAuthCookie(w, r, true)
-		hndfunc(w, r)
+		if s.processAuthCookie(w, r, true) {
+			hndfunc(w, r)
+		}
 	}
 }
 
-func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Request, allowReuse bool) {
+// returns true if valid cookie/token was found, false otherwise
+func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Request, allowReuse bool) bool {
 	tok, err := s.cookieToToken(r, allowReuse)
 	if err == nil {
 		if !allowReuse {
@@ -290,15 +295,16 @@ func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Reques
 			s.TokenToCookie(w, tok.Subject, tok)
 		}
 		r = s.tokenToContext(tok, r)
+		return true
 	} else {
 		if s.LoginURL != "" {
 			log.Debug().Str("url", s.LoginURL).Msg("issuing redirect to login URL")
 			http.Redirect(w, r, s.LoginURL, http.StatusSeeOther)
-			return
+			return false
 		}
 		log.Debug().Msg("issuing 401 as no login URL known")
 		http.Error(w, "Not authorized", http.StatusUnauthorized)
-		return
+		return false
 	}
 }
 
