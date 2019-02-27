@@ -19,7 +19,7 @@ const testAudience = "testAudience"
 const testSubject = "login@example.com"
 const testEmail = "john.smith@example.com"
 const testName = "John Q. Smith Esq."
-const testCookieName = "TestSesionCookie"
+const testCookieName = "TestSessionCookie"
 const testLifespan = time.Minute
 
 var debug = flag.Bool("debug", false, "turn on debug logging")
@@ -156,7 +156,7 @@ func TestCookieIssueAndRefresh(t *testing.T) {
 	req.AddCookie(c)
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Refresh(http.HandlerFunc(okHandler))
+	hndl := sessMgr.Refresh(http.HandlerFunc(okHandler(t, true)))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
@@ -182,7 +182,7 @@ func TestAuthSuccess(t *testing.T) {
 	req.AddCookie(c)
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler))
+	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler(t, true)))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
@@ -197,7 +197,7 @@ func TestAuthFail(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler))
+	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler(t, false)))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode == http.StatusOK {
@@ -215,7 +215,8 @@ func TestLogout(t *testing.T) {
 	req.AddCookie(c)
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Logout(http.HandlerFunc(okHandler))
+	// Context should be found while we're processing the logout, it just kills the cookie afterwards
+	hndl := sessMgr.Logout(http.HandlerFunc(okHandler(t, false)))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
@@ -266,8 +267,17 @@ func testCookieIssuer(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "OK")
 }
 
-func okHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "OK")
+func okHandler(t *testing.T, requirecontext bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Debug().Msgf("checking for context on request %+v", r)
+		tok, ok := pasetosession.GetToken(r)
+		if requirecontext != ok {
+			t.Errorf("context presence mismatch, expected=%v, found=%v", requirecontext, ok)
+		} else {
+			log.Debug().Msgf("context = %+v", tok)
+		}
+		fmt.Fprintln(w, "OK")
+	}
 }
 
 func verifyTestCookie(t *testing.T, ctok *http.Cookie) {

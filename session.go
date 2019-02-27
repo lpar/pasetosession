@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lpar/blammo/log"
 	"github.com/lpar/serial"
 	"github.com/o1egl/paseto"
 )
@@ -78,7 +77,6 @@ func (s *SessionManager) StartGC() chan struct{} {
 		for {
 			select {
 			case <-ticker.C:
-				log.Debug().Msg("running GC on used jti cache")
 				s.serialGen.ExpireSeen(s.tokenLifetime)
 			case <-quit:
 				ticker.Stop()
@@ -247,7 +245,8 @@ func GetToken(r *http.Request) (*paseto.JSONToken, bool) {
 // to that URL to log in. Otherwise, a 401 unauthorized error is issued.
 func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.processAuthCookie(w, r, false) {
+		r, ok := s.processAuthCookie(w, r, false)
+		if ok {
 			xhnd.ServeHTTP(w, r)
 		}
 	})
@@ -257,7 +256,8 @@ func (s *SessionManager) Authenticate(xhnd http.Handler) http.Handler {
 // and returns a HandlerFunc as well.
 func (s *SessionManager) AuthenticateFunc(hndfunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.processAuthCookie(w, r, false) {
+		r, ok := s.processAuthCookie(w, r, false)
+		if ok {
 			hndfunc(w, r)
 		}
 	}
@@ -270,8 +270,9 @@ func (s *SessionManager) AuthenticateFunc(hndfunc http.HandlerFunc) http.Handler
 // new cookie issued.
 func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.processAuthCookie(w, r, true) {
-		xhnd.ServeHTTP(w, r)
+		r, ok := s.processAuthCookie(w, r, true)
+		if ok {
+			xhnd.ServeHTTP(w, r)
 		}
 	})
 }
@@ -280,31 +281,29 @@ func (s *SessionManager) AuthenticateAjax(xhnd http.Handler) http.Handler {
 // and returns a HandlerFunc as well.
 func (s *SessionManager) AuthenticateFuncAjax(hndfunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.processAuthCookie(w, r, true) {
+		r, ok := s.processAuthCookie(w, r, true)
+		if ok {
 			hndfunc(w, r)
 		}
 	}
 }
 
 // returns true if valid cookie/token was found, false otherwise
-func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Request, allowReuse bool) bool {
+func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Request, allowReuse bool) (*http.Request, bool) {
 	tok, err := s.cookieToToken(r, allowReuse)
 	if err == nil {
 		if !allowReuse {
-			log.Debug().Msg("reissuing valid session token")
 			s.TokenToCookie(w, tok.Subject, tok)
 		}
 		r = s.tokenToContext(tok, r)
-		return true
+		return r, true
 	} else {
 		if s.LoginURL != "" {
-			log.Debug().Str("url", s.LoginURL).Msg("issuing redirect to login URL")
 			http.Redirect(w, r, s.LoginURL, http.StatusSeeOther)
-			return false
+			return r, false
 		}
-		log.Debug().Msg("issuing 401 as no login URL known")
 		http.Error(w, "Not authorized", http.StatusUnauthorized)
-		return false
+		return r, false
 	}
 }
 
@@ -312,7 +311,7 @@ func (s *SessionManager) processAuthCookie(w http.ResponseWriter, r *http.Reques
 // token in the HTTP context before calling the wrapped handler.
 func (s *SessionManager) Refresh(xhnd http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s.refreshAuthCookie(w, r)
+		r = s.refreshAuthCookie(w, r)
 		xhnd.ServeHTTP(w, r)
 	})
 }
@@ -320,20 +319,18 @@ func (s *SessionManager) Refresh(xhnd http.Handler) http.Handler {
 // RefreshFunc is the HandlerFunc version of Refresh.
 func (s *SessionManager) RefreshFunc(hndfnc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.refreshAuthCookie(w, r)
+		r = s.refreshAuthCookie(w, r)
 		hndfnc(w, r)
 	}
 }
 
-func (s *SessionManager) refreshAuthCookie(w http.ResponseWriter, r *http.Request) {
+func (s *SessionManager) refreshAuthCookie(w http.ResponseWriter, r *http.Request) *http.Request {
 	tok, err := s.cookieToToken(r, false)
 	if err == nil {
-		log.Debug().Msg("reissuing valid session token")
 		s.TokenToCookie(w, tok.Subject, tok)
 		r = s.tokenToContext(tok, r)
-	} else {
-		log.Debug().Msg("ignoring invalid session token")
 	}
+	return r
 }
 
 // Logout deletes the session cookie then calls the wrapped Handler.
