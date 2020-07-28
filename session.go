@@ -65,7 +65,7 @@ func NewSessionManager(keySeed string, tokenLifetime time.Duration) *SessionMana
 		SameSite:      defaultSameSite,
 		serialGen:     serial.NewGenerator(),
 	}
-	s.StartGC()
+	s.gc = s.StartGC()
 	return s
 }
 
