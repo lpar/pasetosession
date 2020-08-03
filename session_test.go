@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/lpar/blammo/log"
-	"github.com/lpar/pasetosession"
 	"github.com/o1egl/paseto"
 	flag "github.com/spf13/pflag"
+
+	"github.com/lpar/pasetosession"
 )
 
 const testIssuer = "testIssuer"
@@ -32,7 +33,7 @@ func TestMain(m *testing.M) {
 	sessMgr.CookieName = testCookieName
 
 	ds := os.Getenv("DEBUG")
-	if ds == "true" || ds == "1" {
+	if ds == "true" || ds == "1" || *debug {
 		log.SetDebug(true)
 	}
 	os.Exit(m.Run())
@@ -40,8 +41,11 @@ func TestMain(m *testing.M) {
 
 func TestToken(t *testing.T) {
 	s, strtok, err := makeTestData(t)
+	if err != nil {
+		t.Fatalf("failed to create test data")
+	}
 	ntok, err := s.DecodeToken(strtok, false)
-	verifyOutcome(ntok, err, t, s, strtok)
+	verifyOutcome(ntok, err, t)
 	_, err = s.DecodeToken(strtok, false)
 	if err == nil {
 		t.Errorf("duplicate token decode allowed")
@@ -52,13 +56,16 @@ func TestToken(t *testing.T) {
 
 func TestTokenReuse(t *testing.T) {
 	s, strtok, err := makeTestData(t)
+	if err != nil {
+		t.Fatalf("failed to create test data")
+	}
 	ntok, err := s.DecodeToken(strtok, true)
-	verifyOutcome(ntok, err, t, s, strtok)
+	verifyOutcome(ntok, err, t)
 	_, err = s.DecodeToken(strtok, false)
 	if err != nil {
 		t.Errorf("token reuse was not allowed")
 	}
-	verifyOutcome(ntok, err, t, s, strtok)
+	verifyOutcome(ntok, err, t)
 }
 
 func makeTestData(t *testing.T) (*pasetosession.SessionManager, string, error) {
@@ -82,7 +89,7 @@ func makeTestData(t *testing.T) (*pasetosession.SessionManager, string, error) {
 	return s, strtok, err
 }
 
-func verifyOutcome(ntok *paseto.JSONToken, err error, t *testing.T, s *pasetosession.SessionManager, strtok string) {
+func verifyOutcome(ntok *paseto.JSONToken, err error, t *testing.T) {
 	log.Debug().Str("audience", ntok.Audience).Str("issuer", ntok.Issuer).Str("subject", ntok.Subject).Msg("decoded token")
 	if err != nil {
 		t.Errorf("failed to decode token: %v", err)
@@ -133,7 +140,7 @@ func TestSessionTimeout(t *testing.T) {
 	}
 	toko, err := s.DecodeToken(tok1, false)
 	if err != nil {
-		t.Errorf("failed to decode subject-only token inside expiry limit")
+		t.Fatalf("failed to decode subject-only token inside expiry limit")
 	}
 	if toko.Subject != "testsubject@example.com" {
 		t.Errorf("token timeout test decode fail")
@@ -156,7 +163,7 @@ func TestCookieIssueAndRefresh(t *testing.T) {
 	req.AddCookie(c)
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Refresh(http.HandlerFunc(okHandler(t, true)))
+	hndl := sessMgr.Refresh(okHandler(t, true))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
@@ -164,7 +171,7 @@ func TestCookieIssueAndRefresh(t *testing.T) {
 	}
 	ctok, err := getCookie(resp, testCookieName)
 	if err != nil {
-		t.Error("no refreshed cookie issued")
+		t.Fatalf("no refreshed cookie issued")
 	}
 	if ctok.Value == c.Value {
 		t.Error("same cookie issued on refresh")
@@ -182,7 +189,7 @@ func TestAuthSuccess(t *testing.T) {
 	req.AddCookie(c)
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler(t, true)))
+	hndl := sessMgr.Authenticate(okHandler(t, true))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
@@ -197,7 +204,7 @@ func TestAuthFail(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	hndl := sessMgr.Authenticate(http.HandlerFunc(okHandler(t, false)))
+	hndl := sessMgr.Authenticate(okHandler(t, false))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode == http.StatusOK {
@@ -216,13 +223,16 @@ func TestLogout(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	// Context should be found while we're processing the logout, it just kills the cookie afterwards
-	hndl := sessMgr.Logout(http.HandlerFunc(okHandler(t, false)))
+	hndl := sessMgr.Logout(okHandler(t, false))
 	hndl.ServeHTTP(w, req)
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected auth rejection using valid cookie: %d", resp.StatusCode)
 	}
 	ctok, err := getCookie(resp, testCookieName)
+	if err != nil {
+		t.Fatalf("failed to get cookie: %v", err)
+	}
 	if ctok.Value != "" {
 		t.Error("logout failed, cookie survived")
 	}

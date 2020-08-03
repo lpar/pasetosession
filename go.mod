@@ -1,5 +1,7 @@
 module github.com/lpar/pasetosession
 
+go 1.14
+
 require (
 	github.com/lpar/blammo v1.0.3
 	github.com/lpar/serial v1.0.1

@@ -5,12 +5,14 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/lpar/blammo/log"
-	"github.com/lpar/pasetosession"
 	"github.com/o1egl/paseto"
+
+	"github.com/lpar/pasetosession"
 )
 
 // Example values for this demo
@@ -63,7 +65,10 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
        </form>`)
 		return
 	}
-	r.ParseForm()
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("couldn't parse form: %v", err), http.StatusBadRequest)
+	}
 	login := strings.TrimSpace(r.Form["login"][0])
 	password := strings.TrimSpace(r.Form["password"][0])
 	if login == exampleLogin && password == examplePassword {
@@ -104,5 +109,6 @@ func main() {
 	http.Handle("/login", http.HandlerFunc(loginPage))
 	http.Handle("/logout", sessmgr.Logout(http.HandlerFunc(logoutPage)))
 	http.Handle("/protected", sessmgr.Authenticate(http.HandlerFunc(secretPage)))
-	http.ListenAndServe(myPort, nil)
+	err := http.ListenAndServe(myPort, nil)
+	fmt.Fprintf(os.Stderr, "%v", err)
 }
