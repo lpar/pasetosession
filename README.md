@@ -1,3 +1,7 @@
+[![GoDoc](https://godoc.org/github.com/lpar/pasetosession?status.svg)](https://godoc.org/github.com/lpar/pasetosession)
+[![Build Status](https://travis-ci.org/lpar/pasetosession.svg?branch=trunk)](https://travis-ci.org/lpar/pasetosession)
+[![codecov](https://codecov.io/gh/lpar/pasetosession/branch/trunk/graph/badge.svg)](https://codecov.io/gh/lpar/pasetosession)
+
 # pasetosession
 
 This library builds on the PASETO standard to provide session utilities for web applications in Go.
